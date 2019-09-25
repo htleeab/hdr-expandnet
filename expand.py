@@ -13,6 +13,7 @@ from util import (process_path, split_path, compose, map_range, str2bool,
 import colour
 from colour.models.rgb.transfer_functions.st_2084 import oetf_ST2084
 from subprocess import Popen, PIPE, DEVNULL # for calling ffmpeg subprocess
+import time
 
 assert colour.get_domain_range_scale() == 'reference'
 
@@ -147,6 +148,7 @@ def create_video(opt):
     if not os.path.isdir(opt.out):
         os.makedirs(opt.out)
     if not opt.smooth:
+        start_time = time.time()
         # could output without buffering, create encoder
         if opt.tone_map is not None:
             out_vid = create_cv2_out_vid(out_vid_name, width, height, fps)
@@ -154,8 +156,11 @@ def create_video(opt):
             out_ffmpeg_popen = create_ffmpeg_encoder(out_vid_name, width, height, fps)
 
     while (cap_in.isOpened()):
-        perc = cap_in.get(cv2.CAP_PROP_POS_FRAMES) * 100 / n_frames
-        print('\rConverting video: {0:.2f}%'.format(perc), end='')
+        cur_frame_num = cap_in.get(cv2.CAP_PROP_POS_FRAMES)
+        perc = cur_frame_num * 100 / n_frames
+        processing_fps = cur_frame_num / (time.time() - start_time)
+        estimated_remain_process_time = (n_frames-cur_frame_num)/processing_fps if processing_fps>0 else -1
+        print('\rConverting video: {0:.2f}%, framerate: {1:.2f}fps, estimated remaining time:{2:.1f}s'.format(perc, processing_fps, estimated_remain_process_time), end='')
         ret, loaded = cap_in.read()
         if loaded is None:
             break
