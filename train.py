@@ -84,10 +84,10 @@ def train(opt):
         print('WARNING: save_path already exists. '
               'Checkpoints may be overwritten')
 
-    avg_loss = 0
     for epoch in tqdm(range(1, 10_001), desc='Training'):
-        for i, (ldr_in, hdr_target) in enumerate(
-                tqdm(loader, desc=f'Epoch {epoch}')):
+        avg_loss = 0
+        epoch_loss = 0
+        for i, (ldr_in, hdr_target) in enumerate(tqdm(loader, desc=f'Epoch {epoch}')):
             if opt.use_gpu:
                 ldr_in = ldr_in.cuda()
                 hdr_target = hdr_target.cuda()
@@ -97,6 +97,7 @@ def train(opt):
             total_loss.backward()
             optimizer.step()
             avg_loss += total_loss.item()
+            epoch_loss += total_loss.item()
             if ((i + 1) % opt.loss_freq) == 0:
                 rep = (f'Epoch: {epoch:>5d}, '
                        f'Iter: {i+1:>6d}, '
@@ -107,7 +108,8 @@ def train(opt):
         if (epoch % opt.checkpoint_freq) == 0:
             torch.save(model.state_dict(),
                        os.path.join(opt.save_path, f'epoch_{epoch}.pth'))
-
+        with open(os.path.join(opt.save_path, 'losses.txt') , 'a') as loss_file:
+            loss_file.write('epoch{} : training loss = {} \n'.format(epoch, epoch_loss/len(dataset)))
 
 if __name__ == '__main__':
     opt = parse_args()
