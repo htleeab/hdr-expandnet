@@ -12,7 +12,7 @@ from util import (process_path, split_path, compose, map_range, str2bool,
                   create_tmo_param_from_args)
 import colour
 from colour.models.rgb.transfer_functions.st_2084 import oetf_ST2084
-from subprocess import Popen, PIPE # for calling ffmpeg subprocess
+from subprocess import Popen, PIPE, DEVNULL # for calling ffmpeg subprocess
 
 assert colour.get_domain_range_scale() == 'reference'
 
@@ -106,21 +106,25 @@ def create_name(inp, tag, ext, out, extra_tag):
         root = out
     return os.path.join(root, '{0}_{1}.{2}'.format(name, tag, ext))
 
-def create_cv2_out_vid(out_vid_name):
-    fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+def create_cv2_out_vid(out_vid_name, width, height, fps):
+    fourcc = cv2.VideoWriter_fourcc(*'X264')
     out_vid = cv2.VideoWriter(out_vid_name, fourcc, fps, (width, height))
+    if not out_vid.isOpened():
+        print('x264 is not supported, use mp4v as fourcc')
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out_vid = cv2.VideoWriter(out_vid_name, fourcc, fps, (width, height))
+        assert out_vid.isOpened(), 'cannot open cv2 VideoWriter'
     return out_vid
 
 def create_ffmpeg_encoder(out_vid_name, width, height, fps):
     ffmpeg_command = 'ffmpeg -f rawvideo -pix_fmt rgb48le -colorspace bt2020nc -color_trc smpte2084 -color_primaries bt2020 -s {}x{} -r {} -i pipe:0 -y -hide_banner -r {} -c:v libx265 -crf 15 -profile:v main10 -x265-params "range=limited:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc" -pix_fmt yuv420p10le -colorspace bt2020nc -color_trc smpte2084 -color_primaries bt2020 -f mp4 "{}"'.format(width, height, fps, fps, out_vid_name)
-#     print('ffmpeg_command: ',ffmpeg_command)
-    out_ffmpeg_popen = Popen(ffmpeg_command, bufsize=-1, shell=True, stdin=PIPE)
+    out_ffmpeg_popen = Popen(ffmpeg_command, bufsize=-1, shell=True, stdin=PIPE, stdout=DEVNULL, stderr=DEVNULL)
     return out_ffmpeg_popen
 
 def close_ffmpeg_encoder(out_ffmpeg_popen):
     out_ffmpeg_popen.stdin.close()
     ffmpeg_returncode = out_ffmpeg_popen.returncode
-    print('all frame processed, ffmpeg return code:{} '.format(ffmpeg_returncode))
+    print('ffmpeg return code:{} '.format(ffmpeg_returncode))
     if not ffmpeg_returncode:
         print('wait timeout 30s')
         out_ffmpeg_popen.wait(timeout=30)
@@ -139,13 +143,13 @@ def create_video(opt):
     predictions = []
     lum_percs = []
 
-    out_vid_name = create_name(video_file, 'prediction', 'avi', opt.out, opt.tag)
+    out_vid_name = create_name(video_file, 'prediction', 'mp4', opt.out, opt.tag)
     if not os.path.isdir(opt.out):
         os.makedirs(opt.out)
     if not opt.smooth:
         # could output without buffering, create encoder
         if opt.tone_map is not None:
-            out_vid = create_cv2_out_vid(out_vid_name)
+            out_vid = create_cv2_out_vid(out_vid_name, width, height, fps)
         else:
             out_ffmpeg_popen = create_ffmpeg_encoder(out_vid_name, width, height, fps)
 
@@ -177,31 +181,31 @@ def create_video(opt):
                 output_img = (output_img*2**16).astype(np.uint16)
                 output_img = cv2.cvtColor(output_img ,cv2.COLOR_BGR2RGB)
                 out_ffmpeg_popen.stdin.write(output_img.tobytes())
-
+    print()
     cap_in.release()
 
     if opt.smooth:
         print('All frames predicted, smooth luminance and encode output')
+        smooth_predictions = smoothen_luminance(predictions, lum_percs)
         if opt.tone_map is not None:
-            smooth_predictions = smoothen_luminance(predictions, lum_percs)
-            out_vid = create_cv2_out_vid(out_vid_name)
+            out_vid = create_cv2_out_vid(out_vid_name, width, height, fps)
             for i, pred in enumerate(smooth_predictions):
                 perc = (i + 1) * 100 / n_frames
-                print('\rWriting video: {0:.2f}%'.format(perc), end='')
+                print('\rWriting video: {0:.2f}%, luma of 99%: {1:.6f}'.format(perc, lum_percs[i][-1]), end='')
                 tmo_img = tone_map(pred, opt.tone_map)
                 tmo_img = (tmo_img * 255).astype(np.uint8)
                 out_vid.write(tmo_img)
             print()
         else:
             out_ffmpeg_popen = create_ffmpeg_encoder(out_vid_name, width, height, fps)
-            for i, pred in enumerate(predictions):
+            for i, pred in enumerate(smooth_predictions):
                 perc = (i + 1) * 100 / n_frames
-                print('\rWriting video: {0:.2f}%'.format(perc), end='')
+                print('\rWriting video: {0:.2f}%, luma of 99%: {1:.6f}'.format(perc, lum_percs[i][-1]), end='')
                 output_img = oetf_ST2084(pred*10000)
                 output_img = (output_img*2**16).astype(np.uint16)
                 output_img = cv2.cvtColor(output_img ,cv2.COLOR_BGR2RGB)
                 out_ffmpeg_popen.stdin.write(output_img.tobytes())
-
+    print()
     print('All frames processed, closing encoder')
     # close
     if opt.tone_map is not None:
