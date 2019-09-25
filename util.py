@@ -180,11 +180,13 @@ def random_tone_map(x):
     tmo = TRAIN_TMO_DICT[tmos[choice]](randomize=True)
     return map_range(tmo(x))
 
-
 def create_tmo_param_from_args(opt):
-    if opt.tmo == 'exposure':
-        return {k: opt.get(k) for k in ['gamma', 'stops']}
-    else:  # TODO: Implement for others
+    try:
+        if opt.tmo == 'exposure':
+            return {k: opt.get(k) for k in ['gamma', 'stops']}
+        else:  # TODO: Implement for others
+            return {}
+    except:
         return {}
 
 
@@ -319,7 +321,15 @@ class DirectoryDataset(Dataset):
             self.file_list[index],
             flags=cv2.IMREAD_ANYDEPTH + cv2.IMREAD_COLOR)
         if self.preprocess is not None:
-            dpoint = self.preprocess(dpoint)
+            attempts = 0
+            while attempts < 15:
+                try:
+                    dpoint = self.preprocess(dpoint)
+                    break
+                except:
+                    attempts+=1
+                    print('cannot load image {}'.format(self.file_list[index]))
+                    print('might be the slice is bad, re-try?')
         return dpoint
 
     def __len__(self):
