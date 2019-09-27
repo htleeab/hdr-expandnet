@@ -5,7 +5,6 @@ import torch
 from torch.utils.data import Dataset
 import cv2
 
-
 def process_path(directory, create=False):
     directory = os.path.expanduser(directory)
     directory = os.path.normpath(directory)
@@ -70,8 +69,8 @@ class Exposure(object):
         self.stops = stops
         self.gamma = gamma
 
-    def process(self, img):
-        return np.clip(img * (2**self.stops), 0, 1)**self.gamma
+    def __call__(self, img):
+        return np.clip(img * (2**self.stops), 0, 1)**(1 / self.gamma)
 
 
 class PercentileExposure(object):
@@ -182,11 +181,13 @@ def random_tone_map(x):
 
 def create_tmo_param_from_args(opt):
     try:
-        if opt.tmo == 'exposure':
-            return {k: opt.get(k) for k in ['gamma', 'stops']}
+        opt_dict = vars(opt)
+        if opt.tone_map == 'exposure':
+            return {k: opt_dict.get(k) for k in ['gamma', 'stops']}
         else:  # TODO: Implement for others
             return {}
-    except:
+    except Exception as e:
+        print('cannot create_tmo_param_from_args', e, type(opt), opt)
         return {}
 
 

@@ -55,7 +55,7 @@ def get_args():
         help='Stops (loosely defined here) for exposure tone mapping.')
     arg('--gamma',
         type=float,
-        default=1.0,
+        default=2.2,
         help='Gamma curve value (if tone mapping).')
     arg('--use_weights',
         type=process_path,
@@ -114,7 +114,7 @@ def create_cv2_out_vid(out_vid_name, width, height, fps):
     return out_vid
 
 def create_ffmpeg_encoder(out_vid_name, width, height, fps):
-    ffmpeg_command = 'ffmpeg -f rawvideo -pix_fmt rgb48le -colorspace bt2020nc -color_trc smpte2084 -color_primaries bt2020 -s {}x{} -r {} -i pipe:0 -y -hide_banner -r {} -c:v libx265 -crf 15 -profile:v main10 -x265-params "range=limited:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc" -pix_fmt yuv420p10le -colorspace bt2020nc -color_trc smpte2084 -color_primaries bt2020 -f mp4 "{}"'.format(width, height, fps, fps, out_vid_name)
+    ffmpeg_command = 'ffmpeg -f rawvideo -pix_fmt rgb48le -colorspace bt2020nc -color_trc smpte2084 -color_primaries bt2020 -s {}x{} -r {} -i pipe:0 -y -hide_banner -r {} -c:v libx265 -crf 7 -profile:v main10 -x265-params "range=limited:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc" -pix_fmt yuv420p10le -colorspace bt2020nc -color_trc smpte2084 -color_primaries bt2020 -f mp4 "{}"'.format(width, height, fps, fps, out_vid_name)
     out_ffmpeg_popen = Popen(ffmpeg_command, bufsize=-1, shell=True, stdin=PIPE, stdout=DEVNULL, stderr=DEVNULL)
     return out_ffmpeg_popen
 
@@ -268,10 +268,8 @@ def create_images(opt):
             prediction_hdr = (prediction_hdr*2**16).astype(np.uint16)
             cv2.imwrite(out_png_name, prediction_hdr)
         if opt.tone_map is not None:
-            tmo_img = tone_map(prediction, opt.tone_map,
-                               create_tmo_param_from_args(opt))
-            out_name = create_name(ldr_file, 'prediction_{0}'.format(
-                opt.tone_map), 'jpg', opt.out, opt.tag)
+            tmo_img = tone_map(prediction, opt.tone_map, **create_tmo_param_from_args(opt))
+            out_name = create_name(ldr_file, 'prediction_{0}'.format(opt.tone_map), 'jpg', opt.out, opt.tag)
             cv2.imwrite(out_name, (tmo_img * 255).astype(int))
 
 def main():
