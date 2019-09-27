@@ -65,7 +65,9 @@ def resize(x, size):
 
 
 class Exposure(object):
-    def __init__(self, stops=0.0, gamma=1.0):
+    def __init__(self, stops=0.0, gamma=1.0, linear_SDR=False):
+        if linear_SDR:
+            gamma = 1
         self.stops = stops
         self.gamma = gamma
 
@@ -74,11 +76,13 @@ class Exposure(object):
 
 
 class PercentileExposure(object):
-    def __init__(self, gamma=2.0, low_perc=10, high_perc=90, randomize=False):
+    def __init__(self, gamma=2.0, low_perc=10, high_perc=90, randomize=False, linear_SDR=False):
         if randomize:
             gamma = uniform(1.8, 2.2)
             low_perc = uniform(0, 15)
             high_perc = uniform(85, 100)
+        if linear_SDR:
+            gamma = 1
         self.gamma = gamma
         self.low_perc = low_perc
         self.high_perc = high_perc
@@ -99,12 +103,15 @@ class Reinhard(BaseTMO):
                  light_adapt=0.8,
                  color_adapt=0.0,
                  gamma=2.0,
-                 randomize=False):
+                 randomize=False,
+                 linear_SDR=False):
         if randomize:
             gamma = uniform(1.8, 2.2)
             intensity = uniform(-1.0, 1.0)
             light_adapt = uniform(0.8, 1.0)
             color_adapt = uniform(0.0, 0.2)
+        if linear_SDR:
+            gamma = 1
         self.op = cv2.createTonemapReinhard(
             gamma=gamma,
             intensity=intensity,
@@ -113,21 +120,23 @@ class Reinhard(BaseTMO):
 
 
 class Mantiuk(BaseTMO):
-    def __init__(self, saturation=1.0, scale=0.75, gamma=2.0, randomize=False):
+    def __init__(self, saturation=1.0, scale=0.75, gamma=2.0, randomize=False, linear_SDR=False):
         if randomize:
             gamma = uniform(1.8, 2.2)
             scale = uniform(0.65, 0.85)
-
+        if linear_SDR:
+            gamma = 1
         self.op = cv2.createTonemapMantiuk(
             saturation=saturation, scale=scale, gamma=gamma)
 
 
 class Drago(BaseTMO):
-    def __init__(self, saturation=1.0, bias=0.85, gamma=2.0, randomize=False):
+    def __init__(self, saturation=1.0, bias=0.85, gamma=2.0, randomize=False, linear_SDR=False):
         if randomize:
             gamma = uniform(1.8, 2.2)
             bias = uniform(0.7, 0.9)
-
+        if linear_SDR:
+            gamma = 1
         self.op = cv2.createTonemapDrago(
             saturation=saturation, bias=bias, gamma=gamma)
 
@@ -139,10 +148,13 @@ class Durand(BaseTMO):
                  sigma_space=8,
                  sigma_color=0.4,
                  gamma=2.0,
-                 randomize=False):
+                 randomize=False,
+                 linear_SDR=False):
         if randomize:
             gamma = uniform(1.8, 2.2)
             contrast = uniform(3.5)
+        if linear_SDR:
+            gamma = 1
         self.op = cv2.createTonemapDurand(
             contrast=contrast,
             saturation=saturation,
@@ -173,10 +185,10 @@ TRAIN_TMO_DICT = {
 }
 
 
-def random_tone_map(x):
+def random_tone_map(x, linear_SDR=False):
     tmos = list(TRAIN_TMO_DICT.keys())
     choice = np.random.randint(0, len(tmos))
-    tmo = TRAIN_TMO_DICT[tmos[choice]](randomize=True)
+    tmo = TRAIN_TMO_DICT[tmos[choice]](randomize=True, linear_SDR=linear_SDR)
     return map_range(tmo(x))
 
 def create_tmo_param_from_args(opt):
@@ -327,9 +339,10 @@ class DirectoryDataset(Dataset):
                 try:
                     dpoint = self.preprocess(dpoint)
                     break
-                except:
+                except Exception as e:
                     attempts+=1
                     print('cannot load image {}'.format(self.file_list[index]))
+                    print(e)
                     print('might be the slice is bad, re-try?')
         return dpoint
 

@@ -38,7 +38,11 @@ def parse_args():
         help='Report (average) loss every x iterations.')
     parser.add_argument(
         '--use_gpu', type=str2bool, default=True, help='Use GPU for training.')
-
+    parser.add_argument(
+        '--linear_SDR',
+        type=str2bool,
+        default=False,
+        help='Whether the input of data pairs is linear SDR or non-linera SDR. ')
     return parser.parse_args()
 
 
@@ -61,13 +65,21 @@ def transform(hdr):
     ldr = random_tone_map(hdr)
     return cv2torch(ldr), cv2torch(hdr)
 
+def transform_linear_SDR(hdr):
+    hdr = slice_gauss(hdr, crop_size=(384, 384), precision=(0.1, 1))
+    hdr = cv2.resize(hdr, (256, 256))
+    hdr = map_range(hdr)
+    ldr = random_tone_map(hdr, linear_SDR=True)
+    return cv2torch(ldr), cv2torch(hdr)
 
 def train(opt):
     model = ExpandNet()
     optimizer = torch.optim.Adam(model.parameters(), lr=7e-5)
     loss = ExpandNetLoss()
-    dataset = DirectoryDataset(
-        data_root_path=opt.data_root_path, preprocess=transform)
+    if not opt.linear_SDR:
+        dataset = DirectoryDataset(data_root_path=opt.data_root_path, preprocess=transform)
+    else:
+        dataset = DirectoryDataset(data_root_path=opt.data_root_path, preprocess=transform_linear_SDR)
     loader = DataLoader(
         dataset,
         batch_size=opt.batch_size,
