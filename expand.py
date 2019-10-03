@@ -69,6 +69,11 @@ def get_args():
         type=str2bool,
         default=True,
         help='smooth the luma per frame, might cause distord during transition.')
+    parser.add_argument(
+        '--linear_SDR',
+        type=str2bool,
+        default=False,
+        help='Whether the input of model is linear SDR or non-linera SDR. Only aviable for video with BT709 inverse OETF')
     opt = parser.parse_args()
     return opt
 
@@ -160,6 +165,14 @@ def create_video(opt):
         if loaded is None:
             break
         ldr_input = preprocess(loaded, opt)
+        if opt.linear_SDR:
+            # process to linear SDR before pass to model
+            try:
+                # inverse is what colour github document written and code using
+                ldr_input = colour.oetf_inverse(ldr_input, function='ITU-R BT.709')
+            except:
+                # reverse is what searched from code installed by pip3....
+                ldr_input = colour.oetf_reverse(ldr_input, function='ITU-R BT.709')
         t_input = cv2torch(ldr_input)
         if opt.use_gpu:
             net.cuda()
