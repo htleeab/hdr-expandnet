@@ -315,6 +315,7 @@ class DirectoryDataset(Dataset):
                  load_fn=None,
                  preprocess=None):
         super(DirectoryDataset, self).__init__()
+        self.max_tone_map_attempts=15
         data_root_path = process_path(data_root_path)
         self.file_list = []
         for root, _, fnames in sorted(os.walk(data_root_path)):
@@ -333,18 +334,21 @@ class DirectoryDataset(Dataset):
         dpoint = cv2.imread(
             self.file_list[index],
             flags=cv2.IMREAD_ANYDEPTH + cv2.IMREAD_COLOR)
-        if self.preprocess is not None:
-            attempts = 0
-            while attempts < 15:
-                try:
-                    dpoint = self.preprocess(dpoint)
-                    break
-                except Exception as e:
-                    attempts+=1
-                    print('cannot load image {}'.format(self.file_list[index]))
-                    print(e)
-                    print('might be the slice is bad, re-try?')
-        return dpoint
+        if dpoint is None:
+            print('Cannot load image {}'.format(self.file_list[index]))
+        else:
+            if self.preprocess is not None:
+                attempts = 0
+                while attempts < self.max_tone_map_attempts:
+                    try:
+                        dpoint = self.preprocess(dpoint)
+                        return dpoint
+                    except Exception as e:
+                        attempts+=1
+                        print('cannot tone map image {}, attempt: {}'.format(self.file_list[index],attempts))
+                        print(e)
+                        if attempts==self.max_tone_map_attempts:
+                            print('Cannot tone map image {}'.format(self.file_list[index]))
 
     def __len__(self):
         return len(self.file_list)
