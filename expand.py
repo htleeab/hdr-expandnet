@@ -13,6 +13,7 @@ from util import (process_path, split_path, compose, map_range, str2bool,
 import colour
 from colour.models.rgb.transfer_functions.st_2084 import oetf_ST2084
 from subprocess import Popen, PIPE, DEVNULL # for calling ffmpeg subprocess
+import time
 
 assert colour.get_domain_range_scale() == 'reference'
 
@@ -77,14 +78,12 @@ def get_args():
     opt = parser.parse_args()
     return opt
 
-
 def load_pretrained(opt):
     net = ExpandNet()
     net.load_state_dict(
         torch.load(opt.use_weights, map_location=lambda s, l: s))
     net.eval()
     return net
-
 
 #  def create_preprocess(opt):
 #      preprocess = [lambda x: x.astype('float32')]
@@ -94,14 +93,12 @@ def load_pretrained(opt):
 #      preprocess = compose(preprocess)
 #      return preprocess
 
-
 def preprocess(x, opt):
     x = x.astype('float32')
     if opt.resize:
         x = resize(x, size=(opt.width, opt.height))
     x = map_range(x)
     return x
-
 
 def create_name(inp, tag, ext, out, extra_tag):
     root, name, _ = split_path(inp)
@@ -137,9 +134,9 @@ def close_ffmpeg_encoder(out_ffmpeg_popen):
         print('ffmpeg return code:{} '.format(ffmpeg_returncode))
     return
 
-def create_video(opt):
-    net = load_pretrained(opt)
-    video_file = opt.ldr[0]
+def create_video(net, video_file, opt):
+    print('Process video {}'.format(video_file))
+    assert os.path.exists(video_file)
     cap_in = cv2.VideoCapture(video_file)
     fps = cap_in.get(cv2.CAP_PROP_FPS)
     width = int(cap_in.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -152,6 +149,7 @@ def create_video(opt):
     if not os.path.isdir(opt.out):
         os.makedirs(opt.out)
     if not opt.smooth:
+        start_time = time.time()
         # could output without buffering, create encoder
         if opt.tone_map is not None:
             out_vid = create_cv2_out_vid(out_vid_name, width, height, fps)
@@ -159,8 +157,11 @@ def create_video(opt):
             out_ffmpeg_popen = create_ffmpeg_encoder(out_vid_name, width, height, fps)
 
     while (cap_in.isOpened()):
-        perc = cap_in.get(cv2.CAP_PROP_POS_FRAMES) * 100 / n_frames
-        print('\rConverting video: {0:.2f}%'.format(perc), end='')
+        cur_frame_num = cap_in.get(cv2.CAP_PROP_POS_FRAMES)
+        perc = cur_frame_num * 100 / n_frames
+        processing_fps = cur_frame_num / (time.time() - start_time)
+        estimated_remain_process_time = (n_frames-cur_frame_num)/processing_fps if processing_fps>0 else -1
+        print('\rConverting video: {0:.2f}%, framerate: {1:.2f}fps, estimated remaining time:{2:.1f}s'.format(perc, processing_fps, estimated_remain_process_time), end='')
         ret, loaded = cap_in.read()
         if loaded is None:
             break
@@ -191,7 +192,8 @@ def create_video(opt):
                 out_vid.write(tmo_img)
             else:
                 output_img = oetf_ST2084(pred*10000)
-                output_img = (output_img*2**16).astype(np.uint16)
+                output_img = np.clip(output_img,0,1)
+                output_img = (output_img*(2**16-1)).astype(np.uint16)
                 output_img = cv2.cvtColor(output_img ,cv2.COLOR_BGR2RGB)
                 out_ffmpeg_popen.stdin.write(output_img.tobytes())
     print()
@@ -227,6 +229,17 @@ def create_video(opt):
         close_ffmpeg_encoder(out_ffmpeg_popen)
     # finish
     print('end')
+
+def create_videos(opt):
+    if (len(opt.ldr) == 1) and os.path.isdir(opt.ldr[0]):
+        #Treat this as a directory of ldr videos
+        opt.ldr = [
+            os.path.join(opt.ldr[0],f) for f in os.listdir(opt.ldr[0])
+            if any(f.lower().endswith(x) for x in ['.mp4', '.avi'])
+        ]
+    net = load_pretrained(opt)
+    for video_file in opt.ldr:
+        create_video(net, video_file, opt)
 
 def create_images(opt):
     #  preprocess = create_preprocess(opt)
@@ -272,11 +285,10 @@ def create_images(opt):
             out_name = create_name(ldr_file, 'prediction_{0}'.format(opt.tone_map), 'jpg', opt.out, opt.tag)
             cv2.imwrite(out_name, (tmo_img * 255).astype(int))
 
-
 def main():
     opt = get_args()
     if opt.video:
-        create_video(opt)
+        create_videos(opt)
     else:
         create_images(opt)
 
