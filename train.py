@@ -57,18 +57,19 @@ class ExpandNetLoss(nn.Module):
         cosine_term = (1 - self.similarity(x, y)).mean()
         return self.l1_loss(x, y) + self.loss_lambda * cosine_term
 
-
 def transform(hdr):
     hdr = slice_gauss(hdr, crop_size=(384, 384), precision=(0.1, 1))
     hdr = cv2.resize(hdr, (256, 256))
-    hdr = map_range(hdr)
+#     hdr = map_range(hdr)
+    hdr = hdr/10000 # video hdr PQ range 10000
     ldr = random_tone_map(hdr)
     return cv2torch(ldr), cv2torch(hdr)
 
 def transform_linear_SDR(hdr):
     hdr = slice_gauss(hdr, crop_size=(384, 384), precision=(0.1, 1))
     hdr = cv2.resize(hdr, (256, 256))
-    hdr = map_range(hdr)
+#     hdr = map_range(hdr)
+    hdr = hdr/10000 # video hdr PQ range 10000
     ldr = random_tone_map(hdr, linear_SDR=True)
     return cv2torch(ldr), cv2torch(hdr)
 
